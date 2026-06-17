@@ -235,11 +235,55 @@ class Particle {
   }
 }
 
+// ── Bomba Nova (pickup) ───────────────────────────────────────────────────────
+class Bomba {
+  constructor() {
+    this.x      = rand(100, W - 100);
+    this.y      = rand(100, H - 100);
+    this.radius = 12;
+    this.rot    = 0;
+    this.dead   = false;
+  }
+
+  update(dt) { this.rot += dt * 1.5; }
+
+  draw() {
+    ctx.save();
+    ctx.translate(this.x, this.y);
+    ctx.rotate(this.rot);
+
+    // Aura exterior pulsante
+    const pulso = 0.5 + 0.5 * Math.sin(Date.now() / 200);
+    ctx.strokeStyle = `rgba(255, 220, 0, ${(0.25 + pulso * 0.2).toFixed(2)})`;
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.arc(0, 0, 18, 0, Math.PI * 2);
+    ctx.stroke();
+
+    // Estrella de 5 puntas
+    ctx.strokeStyle = 'gold';
+    ctx.lineWidth = 1.8;
+    ctx.lineJoin = 'round';
+    ctx.beginPath();
+    for (let i = 0; i < 10; i++) {
+      const r = i % 2 === 0 ? 12 : 5;
+      const a = (i / 10) * Math.PI * 2 - Math.PI / 2;
+      i === 0 ? ctx.moveTo(Math.cos(a) * r, Math.sin(a) * r)
+              : ctx.lineTo(Math.cos(a) * r, Math.sin(a) * r);
+    }
+    ctx.closePath();
+    ctx.stroke();
+
+    ctx.restore();
+  }
+}
+
 // ── Estado del juego ──────────────────────────────────────────────────────────
 let ship, bullets, asteroids, particles;
 let score, lives, level;
 let state;      // 'playing' | 'dead' | 'gameover'
 let deadTimer;
+let bomba, shipBomba;
 
 function spawnAsteroids(count) {
   const SAFE_DIST = 130;
@@ -254,14 +298,16 @@ function spawnAsteroids(count) {
 }
 
 function initGame() {
-  ship          = new Ship();
+  ship      = new Ship();
   bullets   = [];
   asteroids = [];
   particles = [];
-  score  = 0;
-  lives  = 3;
-  level  = 1;
-  state  = 'playing';
+  score     = 0;
+  lives     = 3;
+  level     = 1;
+  state     = 'playing';
+  bomba     = null;
+  shipBomba = false;
   spawnAsteroids(4);
 }
 
@@ -269,12 +315,24 @@ function nextLevel() {
   level++;
   bullets   = [];
   particles = [];
+  bomba     = null;
   ship.reset();
   spawnAsteroids(3 + level);
+  if (!shipBomba && Math.random() < 0.33) bomba = new Bomba();
 }
 
 function explode(x, y, count = 8) {
   for (let i = 0; i < count; i++) particles.push(new Particle(x, y));
+}
+
+function activarBomba() {
+  shipBomba = false;
+  for (const a of asteroids) {
+    explode(a.x, a.y, a.size * 8);
+    score += POINTS[a.size];
+  }
+  asteroids = [];
+  explode(ship.x, ship.y, 50);
 }
 
 function killShip() {
@@ -306,6 +364,18 @@ function update(dt) {
     if (deadTimer <= 0) { state = 'playing'; ship.reset(); }
     return;
   }
+
+  // Pickup de bomba
+  if (bomba && !bomba.dead) {
+    bomba.update(dt);
+    if (dist(ship, bomba) < ship.radius + bomba.radius) {
+      bomba.dead = true;
+      shipBomba  = true;
+    }
+  }
+
+  // Activar bomba
+  if (shipBomba && pressed('KeyB')) activarBomba();
 
   // Disparar
   if (pressed('Space')) {
@@ -381,6 +451,12 @@ function drawHUD() {
   for (let i = 0; i < lives; i++)
     drawLifeIcon(W - 16 - i * 22, 18);
 
+  if (shipBomba) {
+    ctx.fillStyle = 'gold';
+    ctx.font = '13px monospace';
+    ctx.textAlign = 'left';
+    ctx.fillText('BOMBA [B]', 14, 46);
+  }
 }
 
 function drawOverlay(title, sub) {
@@ -400,6 +476,7 @@ function draw() {
   particles.forEach(p => p.draw());
   asteroids.forEach(a => a.draw());
   bullets.forEach(b => b.draw());
+  if (bomba && !bomba.dead) bomba.draw();
   ship.draw();
 
   drawHUD();
